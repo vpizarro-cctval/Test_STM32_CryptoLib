@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
+#include <stdio.h>
 #include "cmox_crypto.h"
 /* USER CODE END Includes */
 
@@ -32,6 +33,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#define UART_PORT_HANDLE_DEBUG	huart2	// Port handle where debug msgs are shown.
 #define CHUNK_SIZE  48u   /* Chunk size (in bytes) when data to encrypt or decrypt are processed by chunk */
 /* USER CODE END PD */
 
@@ -50,6 +53,7 @@ cmox_cbc_handle_t Cbc_Ctx;
 
 enum {PASSED, FAILED};
 uint8_t glob_status = FAILED;
+//__IO TestStatus glob_status = FAILED;
 
 const uint8_t Key[] =
 {
@@ -99,7 +103,15 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+	cmox_cipher_retval_t retval;
+	size_t computed_size;
+	/* General cipher context */
+	cmox_cipher_handle_t *cipher_ctx;
+	/* Index for piecemeal processing */
+	uint32_t index;
 
+//	/* Enable the CPU Cache */
+//	CPU_CACHE_Enable();
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -129,6 +141,277 @@ int main(void)
 	  {
 		Error_Handler();
 	  }
+
+	  /* --------------------------------------------------------------------------
+	   * SINGLE CALL USAGE
+	   * --------------------------------------------------------------------------
+	   */
+
+	  /* Compute directly the ciphertext passing all the needed parameters */
+	  /* Note: CMOX_AES_CBC_ENC_ALGO refer to the default AES implementation
+	   * selected in cmox_default_config.h. To use a specific implementation, user can
+	   * directly choose:
+	   * - CMOX_AESFAST_CBC_ENC_ALGO to select the AES fast implementation
+	   * - CMOX_AESSMALL_CBC_ENC_ALGO to select the AES small implementation
+	   */
+	  retval = cmox_cipher_encrypt(CMOX_AES_CBC_ENC_ALGO,                  /* Use AES CBC algorithm */
+	                               Plaintext, sizeof(Plaintext),           /* Plaintext to encrypt */
+	                               Key, sizeof(Key),                       /* AES key to use */
+	                               IV, sizeof(IV),                         /* Initialization vector */
+	                               Computed_Ciphertext, &computed_size);   /* Data buffer to receive generated ciphertext */
+
+	  /* Verify API returned value */
+	  if (retval != CMOX_CIPHER_SUCCESS)
+	  {
+	    Error_Handler();
+	  }
+
+	  /* Verify generated data size is the expected one */
+	  if (computed_size != sizeof(Expected_Ciphertext))
+	  {
+	    Error_Handler();
+	  }
+
+	  /* Verify generated data are the expected ones */
+	  if (memcmp(Expected_Ciphertext, Computed_Ciphertext, computed_size) != 0)
+	  {
+	    Error_Handler();
+	  }
+
+	  /* Compute directly the plaintext passing all the needed parameters */
+	  /* Note: CMOX_AES_CBC_DEC_ALGO refer to the default AES implementation
+	   * selected in cmox_default_config.h. To use a specific implementation, user can
+	   * directly choose:
+	   * - CMOX_AESFAST_CBC_DEC_ALGO to select the AES fast implementation
+	   * - CMOX_AESSMALL_CBC_DEC_ALGO to select the AES small implementation
+	   */
+	  retval = cmox_cipher_decrypt(CMOX_AES_CBC_DEC_ALGO,                 /* Use AES CBC algorithm */
+	                               Expected_Ciphertext, sizeof(Expected_Ciphertext), /* Ciphertext to decrypt */
+	                               Key, sizeof(Key),                      /* AES key to use */
+	                               IV, sizeof(IV),                        /* Initialization vector */
+	                               Computed_Plaintext, &computed_size);   /* Data buffer to receive generated plaintext */
+
+	  /* Verify API returned value */
+	  if (retval != CMOX_CIPHER_SUCCESS)
+	  {
+	    Error_Handler();
+	  }
+
+	  /* Verify generated data size is the expected one */
+	  if (computed_size != sizeof(Plaintext))
+	  {
+	    Error_Handler();
+	  }
+
+	  /* Verify generated data are the expected ones */
+	  if (memcmp(Plaintext, Computed_Plaintext, computed_size) != 0)
+	  {
+	    Error_Handler();
+	  }
+
+	  /* --------------------------------------------------------------------------
+	     * MULTIPLE CALLS USAGE
+	     * --------------------------------------------------------------------------
+	     */
+
+	    /* Construct a cipher context that is configured to perform AES CBC encryption operations */
+	    /* Note: CMOX_AES_CBC_ENC refer to the default AES implementation
+	     * selected in cmox_default_config.h. To use a specific implementation, user can
+	     * directly choose:
+	     * - CMOX_AESFAST_CBC_ENC to select the AES fast implementation
+	     * - CMOX_AESSMALL_CBC_ENC to select the AES small implementation
+	     */
+	    cipher_ctx = cmox_cbc_construct(&Cbc_Ctx, CMOX_AES_CBC_ENC);
+	    if (cipher_ctx == NULL)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Initialize the cipher context */
+	    retval = cmox_cipher_init(cipher_ctx);
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Setup of the encryption key into the context */
+	    retval = cmox_cipher_setKey(cipher_ctx, Key, sizeof(Key));  /* AES key to use */
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Setup of the Initialization Vector (IV) into the context */
+	    retval = cmox_cipher_setIV(cipher_ctx, IV, sizeof(IV));     /* Initialization vector */
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Encrypt the plaintext in multiple steps by appending chunks of CHUNK_SIZE bytes */
+	    for (index = 0; index < (sizeof(Plaintext) - CHUNK_SIZE); index += CHUNK_SIZE)
+	    {
+	      retval = cmox_cipher_append(cipher_ctx,
+	                                  &Plaintext[index], CHUNK_SIZE,        /* Chunk of plaintext to encrypt */
+	                                  Computed_Ciphertext, &computed_size); /* Data buffer to receive generated chunk
+	                                                                           of ciphertext */
+
+	      /* Verify API returned value */
+	      if (retval != CMOX_CIPHER_SUCCESS)
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data size is the expected one */
+	      if (computed_size != CHUNK_SIZE)
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data are the expected ones */
+	      if (memcmp(&Expected_Ciphertext[index], Computed_Ciphertext, computed_size) != 0)
+	      {
+	        Error_Handler();
+	      }
+	    }
+	    /* Process with encryption of the last part if needed */
+	    if (index < sizeof(Plaintext))
+	    {
+	      retval = cmox_cipher_append(cipher_ctx,
+	                                  &Plaintext[index],
+	                                  sizeof(Plaintext) - index,              /* Last part of plaintext to encrypt */
+	                                  Computed_Ciphertext, &computed_size);   /* Data buffer to receive generated last
+	                                                                             part of ciphertext */
+
+	      /* Verify API returned value */
+	      if (retval != CMOX_CIPHER_SUCCESS)
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data size is the expected one */
+	      if (computed_size != (sizeof(Plaintext) - index))
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data are the expected ones */
+	      if (memcmp(&Expected_Ciphertext[index], Computed_Ciphertext, computed_size) != 0)
+	      {
+	        Error_Handler();
+	      }
+	    }
+
+	    /* Cleanup the context */
+	    retval = cmox_cipher_cleanup(cipher_ctx);
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Construct a cipher context that is configured to perform AES CBC decryption operations */
+	    /* Note: CMOX_AES_CBC_DEC refer to the default AES implementation
+	     * selected in cmox_default_config.h. To use a specific implementation, user can
+	     * directly choose:
+	     * - CMOX_AESFAST_CBC_DEC to select the AES fast implementation
+	     * - CMOX_AESSMALL_CBC_DEC to select the AES small implementation
+	     */
+	    cipher_ctx = cmox_cbc_construct(&Cbc_Ctx, CMOX_AES_CBC_DEC);
+	    if (cipher_ctx == NULL)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Initialize the cipher context */
+	    retval = cmox_cipher_init(cipher_ctx);
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Setup of the decryption key into the context */
+	    retval = cmox_cipher_setKey(cipher_ctx, Key, sizeof(Key));  /* AES key to use */
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Setup of the Initialization Vector (IV) into the context */
+	    retval = cmox_cipher_setIV(cipher_ctx, IV, sizeof(IV));     /* Initialization vector */
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* Decrypt the plaintext in multiple steps by appending chunks of CHUNK_SIZE bytes */
+	    for (index = 0; index < (sizeof(Expected_Ciphertext) - CHUNK_SIZE); index += CHUNK_SIZE)
+	    {
+	      retval = cmox_cipher_append(cipher_ctx,
+	                                  &Expected_Ciphertext[index],
+	                                  CHUNK_SIZE,                           /* Chunk of ciphertext to decrypt */
+	                                  Computed_Plaintext, &computed_size);  /* Data buffer to receive generated
+	                                                                           chunk of plaintext */
+
+	      /* Verify API returned value */
+	      if (retval != CMOX_CIPHER_SUCCESS)
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data size is the expected one */
+	      if (computed_size != CHUNK_SIZE)
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data are the expected ones */
+	      if (memcmp(&Plaintext[index], Computed_Plaintext, computed_size) != 0)
+	      {
+	        Error_Handler();
+	      }
+	    }
+	    /* Process with encryption of the last part if needed */
+	    if (index < sizeof(Expected_Ciphertext))
+	    {
+	      retval = cmox_cipher_append(cipher_ctx,
+	                                  &Expected_Ciphertext[index],
+	                                  sizeof(Expected_Ciphertext) - index,    /* Last part of ciphertext to decrypt */
+	                                  Computed_Plaintext, &computed_size);    /* Data buffer to receive generated last
+	                                                                             part of plaintext */
+
+	      /* Verify API returned value */
+	      if (retval != CMOX_CIPHER_SUCCESS)
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data size is the expected one */
+	      if (computed_size != (sizeof(Expected_Ciphertext) - index))
+	      {
+	        Error_Handler();
+	      }
+
+	      /* Verify generated data are the expected ones */
+	      if (memcmp(&Plaintext[index], Computed_Plaintext, computed_size) != 0)
+	      {
+	        Error_Handler();
+	      }
+	    }
+
+	    /* Cleanup the handle */
+	    retval = cmox_cipher_cleanup(cipher_ctx);
+	    if (retval != CMOX_CIPHER_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    /* No more need of cryptographic services, finalize cryptographic library */
+	    if (cmox_finalize(NULL) != CMOX_INIT_SUCCESS)
+	    {
+	      Error_Handler();
+	    }
+
+	    printf("AES_CBC_EncryptDecrypt completed successfully.\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -261,7 +544,19 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/**
+  * @brief  Retargets the C library printf function to the USART.
+  *   None
+  * @retval None
+  */
+PUTCHAR_PROTOTYPE
+{
+	/* Place your implementation of fputc here */
+	/* e.g. write a character to the USART1 and Loop until the end of transmission */
+	HAL_UART_Transmit(&UART_PORT_HANDLE_DEBUG, (uint8_t *)&ch, 1, 0xFFFF);
 
+	return ch;
+}
 /* USER CODE END 4 */
 
 /**
@@ -278,8 +573,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
