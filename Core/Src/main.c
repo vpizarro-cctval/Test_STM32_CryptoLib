@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "cmox_crypto.h"
+#include "cachel1_armv7.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,12 +45,13 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CRC_HandleTypeDef hcrc;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 /* CBC context handle */
 cmox_cbc_handle_t Cbc_Ctx;
-
 
 enum {PASSED, FAILED};
 uint8_t glob_status = FAILED;
@@ -86,8 +88,9 @@ uint8_t Computed_Plaintext[sizeof(Plaintext)];
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
-
+static void CPU_CACHE_Enable(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -110,8 +113,8 @@ int main(void)
 	/* Index for piecemeal processing */
 	uint32_t index;
 
-//	/* Enable the CPU Cache */
-//	CPU_CACHE_Enable();
+	/* Enable the CPU Cache */
+	CPU_CACHE_Enable();
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -133,7 +136,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+  	  printf("UART initialized.\n");
+  	  printf("CRC initialized.\n");
+
 	  cmox_init_arg_t init_target = {CMOX_INIT_TARGET_H7RS, NULL};
 
 	  /* Initialize cryptographic library */
@@ -141,12 +148,14 @@ int main(void)
 	  {
 		Error_Handler();
 	  }
+	  printf("CMOX initialized.\n");
 
 	  /* --------------------------------------------------------------------------
 	   * SINGLE CALL USAGE
 	   * --------------------------------------------------------------------------
 	   */
 
+	  printf("Single call usage.\n");
 	  /* Compute directly the ciphertext passing all the needed parameters */
 	  /* Note: CMOX_AES_CBC_ENC_ALGO refer to the default AES implementation
 	   * selected in cmox_default_config.h. To use a specific implementation, user can
@@ -154,17 +163,19 @@ int main(void)
 	   * - CMOX_AESFAST_CBC_ENC_ALGO to select the AES fast implementation
 	   * - CMOX_AESSMALL_CBC_ENC_ALGO to select the AES small implementation
 	   */
-	  retval = cmox_cipher_encrypt(CMOX_AES_CBC_ENC_ALGO,                  /* Use AES CBC algorithm */
+	  retval = cmox_cipher_encrypt(CMOX_AESFAST_CBC_ENC_ALGO,                  /* Use AES CBC algorithm */
 	                               Plaintext, sizeof(Plaintext),           /* Plaintext to encrypt */
 	                               Key, sizeof(Key),                       /* AES key to use */
 	                               IV, sizeof(IV),                         /* Initialization vector */
 	                               Computed_Ciphertext, &computed_size);   /* Data buffer to receive generated ciphertext */
+	  printf("cmox_cipher_encrypt() completed.\n");
 
 	  /* Verify API returned value */
 	  if (retval != CMOX_CIPHER_SUCCESS)
 	  {
 	    Error_Handler();
 	  }
+	  printf("CMOX_CIPHER_SUCCESS.\n");
 
 	  /* Verify generated data size is the expected one */
 	  if (computed_size != sizeof(Expected_Ciphertext))
@@ -472,6 +483,32 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief CRC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRC_Init(void)
+{
+
+  /* USER CODE BEGIN CRC_Init 0 */
+
+  /* USER CODE END CRC_Init 0 */
+
+  /* USER CODE BEGIN CRC_Init 1 */
+
+  /* USER CODE END CRC_Init 1 */
+  hcrc.Instance = CRC;
+  if (HAL_CRC_Init(&hcrc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRC_Init 2 */
+
+  /* USER CODE END CRC_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -556,6 +593,20 @@ PUTCHAR_PROTOTYPE
 	HAL_UART_Transmit(&UART_PORT_HANDLE_DEBUG, (uint8_t *)&ch, 1, 0xFFFF);
 
 	return ch;
+}
+
+/**
+  * @brief  CPU L1-Cache enable.
+  * @param  None
+  * @retval None
+  */
+static void CPU_CACHE_Enable(void)
+{
+  /* Enable I-Cache */
+  SCB_EnableICache(); // warning: implicit declaration
+
+  /* Enable D-Cache */
+  SCB_EnableDCache(); // warning: implicit declaration
 }
 /* USER CODE END 4 */
 
