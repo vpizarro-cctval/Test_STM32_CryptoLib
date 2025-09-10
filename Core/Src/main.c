@@ -141,7 +141,7 @@ int main(void)
   	  printf("UART initialized.\n");
   	  printf("CRC initialized.\n");
 
-	  cmox_init_arg_t init_target = {CMOX_INIT_TARGET_H7RS, NULL};
+	  cmox_init_arg_t init_target = {CMOX_INIT_TARGET_F4, NULL};
 
 	  /* Initialize cryptographic library */
 	  if (cmox_initialize(&init_target) != CMOX_INIT_SUCCESS)
