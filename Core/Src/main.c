@@ -39,6 +39,8 @@
 #define CRYPTOLIB_TEST_BUF_SIZE		100	// Bytes.
 #define CRYPTOLIB_TEST_KEY_SIZE		16	// Bytes.
 #define CRYPTOLIB_TEST_BLOCK_SIZE 	16	// Bytes.
+#define CRYPTOLIB_TEST_HMAC_ALGO    CMOX_HMAC_SHA256_ALGO
+#define CRYPTOLIB_TEST_HMAC_SIZE	4	// Minimum size recommended by NIST SP 800-107
 #define CRYPTOLIB_TEST_ERROR		0
 #define CRYPTOLIB_TEST_SUCCESS		1
 /* USER CODE END PD */
@@ -59,12 +61,20 @@ uint8_t is_data_to_dec = 0; // Flag to start the decryption of data from rx_buf_
 // For AES:
 const uint8_t aes_key[CRYPTOLIB_TEST_KEY_SIZE] =
 {
-  0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+	0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
 };
 const uint8_t aes_iv[CRYPTOLIB_TEST_BLOCK_SIZE] =
 {
-  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
 };
+
+// For HMAC:
+const uint8_t hmac_key[CRYPTOLIB_TEST_KEY_SIZE] = // Minimal size of 16 bytes for SHA-256.
+{
+	0xcf, 0xd4, 0xa4, 0x49, 0x10, 0xc9, 0xe5, 0x67, 0x50, 0x7a, 0xbb, 0x6c, 0xed, 0xe4, 0xfe, 0x60
+};
+
+// Buffers without encryption.
 uint8_t tx_buf[CRYPTOLIB_TEST_BUF_SIZE] = {0};
 uint8_t rx_buf[CRYPTOLIB_TEST_BUF_SIZE] = {0};
 
@@ -72,12 +82,15 @@ uint8_t rx_buf[CRYPTOLIB_TEST_BUF_SIZE] = {0};
 // to create a byte with a size only know at runtime.
 uint8_t tx_buf_enc[CRYPTOLIB_TEST_BUF_SIZE] = {0};
 uint8_t rx_buf_enc[CRYPTOLIB_TEST_BUF_SIZE] = {0};
-uint8_t computed_hash[CMOX_SHA3_224_SIZE]; // Smallest size.
+
+// For HMAC.
+uint8_t hmac_tag[CRYPTOLIB_TEST_HMAC_SIZE] = {0}; // I assume the tag will be truncated by the lib to only use their 4 MSB.
 
 size_t tx_buf_size = 0;     // N° of bytes in tx_buf containing the msg to send.
 size_t tx_buf_enc_size = 0; // N° of bytes in tx_buf containing the encrypted msg to send.
 size_t rx_buf_enc_size = 0; // N° of bytes in rx_buf_enc containing the received msg to decrypt.
 size_t rx_buf_size = 0;     // N° of bytes in rx_buf containing the decrypted msg.
+size_t hmac_tag_size = 0;   // Size in bytes of the generated tag.
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,6 +103,7 @@ static void CPU_CACHE_Enable(void);
 uint8_t EncryptData(void);
 uint8_t DecryptData(void);
 void TestEncDec(void);
+void TestHmac(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -142,7 +156,8 @@ int main(void)
 	}
 	printf("CMOX initialized.\n");
 
-	TestEncDec();
+	// TestEncDec();
+	TestHmac();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -153,18 +168,20 @@ int main(void)
 		if (EncryptData() == CRYPTOLIB_TEST_ERROR) {
 			Error_Handler();
 		}
+		// TODO: Calculate and append MAC after encryption.
 		is_data_to_enc = 0;
 	}
 
 	if (is_data_to_dec) {
+		// TODO: Verify MAC before decryption.
 		if (DecryptData() == CRYPTOLIB_TEST_ERROR) {
 			Error_Handler();
 		}
 		is_data_to_dec = 0;
 	}
-    /* USER CODE END WHILE */
+	/* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+	/* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
@@ -197,13 +214,13 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLQ = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    Error_Handler();
+	Error_Handler();
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+							  |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
@@ -211,7 +228,7 @@ void SystemClock_Config(void)
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
-    Error_Handler();
+	Error_Handler();
   }
 }
 
@@ -233,7 +250,7 @@ static void MX_CRC_Init(void)
   hcrc.Instance = CRC;
   if (HAL_CRC_Init(&hcrc) != HAL_OK)
   {
-    Error_Handler();
+	Error_Handler();
   }
   /* USER CODE BEGIN CRC_Init 2 */
 
@@ -266,7 +283,7 @@ static void MX_USART2_UART_Init(void)
   huart2.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_UART_Init(&huart2) != HAL_OK)
   {
-    Error_Handler();
+	Error_Handler();
   }
   /* USER CODE BEGIN USART2_Init 2 */
 
@@ -377,14 +394,12 @@ uint8_t DecryptData(void)
 	// TODO: Clear buffers after use.
 	
 	/* Verify API returned value */
-	if (retval != CMOX_CIPHER_SUCCESS)
-	{
+	if (retval != CMOX_CIPHER_SUCCESS) {
 		return CRYPTOLIB_TEST_ERROR;
 	}
 
 	/* Verify generated data size is the expected one */
-	if (rx_buf_size != rx_buf_enc_size)
-	{
+	if (rx_buf_size != rx_buf_enc_size) {
 		return CRYPTOLIB_TEST_ERROR;
 	}
 
@@ -471,14 +486,12 @@ void TestEncDec(void)
 							rx_buf, &rx_buf_size);   		/* Data buffer to receive generated plaintext */
 	
 	/* Verify API returned value */
-	if (retval != CMOX_CIPHER_SUCCESS)
-	{
+	if (retval != CMOX_CIPHER_SUCCESS) {
 		printf("Error: Decryption failed.\n");
 	}
 
 	/* Verify generated data size is the expected one */
-	if (rx_buf_size != rx_buf_enc_size)
-	{
+	if (rx_buf_size != rx_buf_enc_size) {
 		printf("Error: Incorrect size of decrypted data.\n");
 	}
 
@@ -496,6 +509,127 @@ void TestEncDec(void)
 		printf("Encryption/decryption test failed.\n");
 	}
 
+	printf("Test completed.\n");
+}
+
+void TestHmac(void)
+{
+	printf("HMAC authentication verification test start:\n");
+	
+	cmox_mac_retval_t retval;
+
+	// Clear buffers.
+	memset(tx_buf, 0, CRYPTOLIB_TEST_BUF_SIZE);
+	memset(tx_buf_enc, 0, CRYPTOLIB_TEST_BUF_SIZE);
+	memset(rx_buf_enc, 0, CRYPTOLIB_TEST_BUF_SIZE);
+	memset(rx_buf, 0, CRYPTOLIB_TEST_BUF_SIZE);
+
+	tx_buf_size = 0;
+	tx_buf_enc_size = 0;
+	rx_buf_size = 0;
+	rx_buf_enc_size = 0;
+
+	uint8_t msg_to_hmac[] = "";
+	memcpy(tx_buf, msg_to_hmac, sizeof(msg_to_hmac));
+
+	printf("msg_to_hmac: ");
+	printf(msg_to_hmac);
+	printf("\n");
+
+	printf("tx_buf: ");
+	printf(tx_buf);
+	printf("\n");
+
+	tx_buf_size = sizeof(msg_to_hmac);
+	printf("tx_buf_size: ");
+	printf("%d", tx_buf_size);
+	printf("\n");
+
+	printf("Generating tag for tx_buf...\n");
+
+	retval = cmox_mac_compute(CRYPTOLIB_TEST_HMAC_ALGO, /* Use HMAC SHA256 algorithm */
+							tx_buf, tx_buf_size,        /* Message to authenticate */
+							hmac_key, sizeof(hmac_key), /* HMAC Key to use */
+							NULL, 0,                    /* Custom data */
+							hmac_tag,                   /* Data buffer to receive generated authnetication tag */
+							sizeof(hmac_tag),    		/* Expected authentication tag size */
+							&hmac_tag_size);            /* Generated tag size */
+
+	/* Verify API returned value */
+	if (retval != CMOX_MAC_SUCCESS) {
+		printf("Error: Tag generation failed.\n");
+	}
+
+	/* Verify generated data size is the expected one */
+	if (hmac_tag_size != sizeof(hmac_tag)) {
+		printf("Error: Incorrect size of generated tag.\n");
+	}
+
+	printf("hmac_tag: ");
+	for (int i = 0; i < hmac_tag_size; i++) {
+		printf("%02X", hmac_tag[i]);
+		printf(":%c", hmac_tag[i]);
+		if (i < hmac_tag_size - 1) {
+			printf(", ");
+		}
+	}
+	printf("\n");
+
+	printf("hmac_tag_size: ");
+	printf("%d", hmac_tag_size);
+	printf("\n");
+
+	memcpy(tx_buf_enc, tx_buf, tx_buf_size);
+	// Can't use strcat() as this will overwrite the last element of tx_buf_enc if this is '\0' (Null terminated string).
+	memcpy(tx_buf_enc + tx_buf_size, hmac_tag, hmac_tag_size);
+	tx_buf_enc_size = tx_buf_size + hmac_tag_size;
+
+	memcpy(rx_buf_enc, tx_buf_enc, tx_buf_enc_size);
+	rx_buf_enc_size = tx_buf_enc_size;
+
+	printf("rx_buf_enc: ");
+	printf(rx_buf_enc);
+	printf("\n");
+
+	printf("rx_buf_enc_size: ");
+	printf("%d", rx_buf_enc_size);
+	printf("\n");	
+
+	uint8_t hmac_tag_extracted[sizeof(hmac_tag)] = {0};
+
+	// WARN: In the receiver the msg structure must be known beforehand to be able to verify it.
+	memcpy(hmac_tag_extracted, rx_buf_enc + tx_buf_size, hmac_tag_size);
+	memset(rx_buf_enc + tx_buf_size, 0, hmac_tag_size);
+	rx_buf_enc_size -= hmac_tag_size;
+
+	printf("Verifying rx_buf_enc's MAC...\n");
+
+	retval = cmox_mac_verify(CRYPTOLIB_TEST_HMAC_ALGO,  /* Use HMAC SHA256 algorithm */
+							rx_buf_enc, rx_buf_enc_size,/* Message to verify */
+							hmac_key, sizeof(hmac_key), /* HMAC Key to use */
+							NULL, 0,              		/* Custom data */
+							hmac_tag_extracted,         /* Authentication tag */
+							hmac_tag_size);      		/* tag size */
+
+	/* Verify API returned value */
+	if (retval != CMOX_MAC_AUTH_SUCCESS) {
+		printf("Error: MAC verification failed.\n");
+	} else {
+		printf("MAC verification successful.\n");
+	}
+
+	memcpy(rx_buf, rx_buf_enc, rx_buf_enc_size);
+	rx_buf_size = rx_buf_enc_size;
+
+	printf("rx_buf: ");
+	printf(rx_buf);
+	printf("\n");
+
+	printf("rx_buf_size: ");
+	printf("%d", rx_buf_size);
+	printf("\n");
+
+	printf("HMAC authentication verification test successful.\n");
 	printf("Test completed.\n");
 }
 
@@ -542,7 +676,7 @@ void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+	 ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
