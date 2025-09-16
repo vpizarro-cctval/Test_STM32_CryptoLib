@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include "cmox_crypto.h"
 #include "cachel1_armv7.h"
+#include "Cryptolib.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,17 +60,17 @@ uint8_t is_data_to_enc = 0; // Flag to start the encryption of data from tx_buf.
 uint8_t is_data_to_dec = 0; // Flag to start the decryption of data from rx_buf_enc.
 
 // For AES:
-const uint8_t aes_key[CRYPTOLIB_TEST_KEY_SIZE] =
+uint8_t aes_key[CRYPTOLIB_TEST_KEY_SIZE] =
 {
 	0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
 };
-const uint8_t aes_iv[CRYPTOLIB_TEST_BLOCK_SIZE] =
+uint8_t aes_iv[CRYPTOLIB_TEST_BLOCK_SIZE] =
 {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
 };
 
 // For HMAC:
-const uint8_t hmac_key[CRYPTOLIB_TEST_KEY_SIZE] = // Minimal size of 16 bytes for SHA-256.
+uint8_t hmac_key[CRYPTOLIB_TEST_KEY_SIZE] = // Minimal size of 16 bytes for SHA-256.
 {
 	0xcf, 0xd4, 0xa4, 0x49, 0x10, 0xc9, 0xe5, 0x67, 0x50, 0x7a, 0xbb, 0x6c, 0xed, 0xe4, 0xfe, 0x60
 };
@@ -102,6 +103,7 @@ static void MX_CRC_Init(void);
 static void CPU_CACHE_Enable(void);
 uint8_t EncryptData(void);
 uint8_t DecryptData(void);
+void TestCryptolib(void);
 void TestEncDec(void);
 void TestHmac(void);
 /* USER CODE END PFP */
@@ -157,7 +159,8 @@ int main(void)
 	printf("CMOX initialized.\n");
 
 	// TestEncDec();
-	TestHmac();
+	// TestHmac();
+	TestCryptolib();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -406,6 +409,89 @@ uint8_t DecryptData(void)
 	return CRYPTOLIB_TEST_SUCCESS;
 }
 
+void TestCryptolib(void)
+{
+	Cryptolib_t crypto;
+
+	if (Cryptolib_Init(&crypto) == CRYPTOLIB_NO_ERROR) {
+		printf("Cryptolib struct initialized.\n");
+	}
+
+	Cryptolib_key_t aes_key_test = 
+	{
+		0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+	};
+
+	Cryptolib_key_t hmac_key_test =
+	{
+		0xcf, 0xd4, 0xa4, 0x49, 0x10, 0xc9, 0xe5, 0x67, 0x50, 0x7a, 0xbb, 0x6c, 0xed, 0xe4, 0xfe, 0x60
+	};
+
+	uint8_t hmac_key_test2[17] = {0};
+
+	if (Cryptolib_SetKeys(&crypto, aes_key_test, hmac_key_test) == CRYPTOLIB_NO_ERROR) {
+		printf("Cryptolib keys set.\n");
+	}
+
+	printf("Stored keys: \n");
+	printf("AES: ");
+	for (int i = 0; i < CRYPTOLIB_KEY_SIZE; i++) {
+		printf("%02X", (crypto._aes_key)[i]);
+		if (i == CRYPTOLIB_KEY_SIZE - 1) {
+			printf("\n");
+			break;
+		}
+		printf(", ");
+	}
+	printf("HMAC: ");
+	for (int i = 0; i < CRYPTOLIB_KEY_SIZE; i++) {
+		printf("%02X", (crypto._hmac_key)[i]);
+		if (i == CRYPTOLIB_KEY_SIZE - 1) {
+			printf("\n");
+			break;
+		}
+		printf(", ");
+	}
+
+	uint8_t test_msg[] = "D";
+	size_t test_msg_size = sizeof(test_msg);
+	uint8_t enc_msg[CRYPTOLIB_ENC_MSG_SIZE] = {0};
+	uint8_t dec_msg[CRYPTOLIB_MAX_MSG_SIZE] = {0};
+	
+	printf("Msg to encrypt: ");
+	printf(test_msg);
+	printf("\n");
+
+	if (Cryptolib_Encrypt(&crypto, test_msg, test_msg_size, enc_msg) == CRYPTOLIB_NO_ERROR) {
+		printf("Encryption successful.\n");
+	} else {
+		printf("Encryption failed.\n");
+		return;
+	}
+
+	printf("Encrypted msg:\n");
+	for (int i = 0; i < CRYPTOLIB_ENC_MSG_SIZE; i++) {
+		printf("%02X", enc_msg[i]);
+		if (i == CRYPTOLIB_ENC_MSG_SIZE - 1) {
+			printf("\n");
+			break;
+		}
+		printf(", ");
+	}
+
+	uint8_t decryption = Cryptolib_Decrypt(&crypto, enc_msg, dec_msg);
+	if (decryption == CRYPTOLIB_NO_ERROR) {
+		printf("Decryption successful.\n");
+	} else {
+		printf("Decryption failed. Error code: %d\n", decryption);
+		return;
+	}
+
+	printf("Decrypted msg: ");
+	printf(dec_msg);
+	printf("\n");
+}
+
 void TestEncDec(void) 
 {
 	// TEST: Try to encrypt data that is not a multiple of the AES block size (16 bytes).
@@ -424,7 +510,7 @@ void TestEncDec(void)
 	rx_buf_size = 0;
 	rx_buf_enc_size = 0;
 
-	uint8_t msg_to_enc[] = "C";
+	uint8_t msg_to_enc[] = "EEE350036003700380035003600370038003500360037003800350036003700380098";
 	memcpy(tx_buf, msg_to_enc, sizeof(msg_to_enc));
 
 	printf("msg_to_enc: ");
