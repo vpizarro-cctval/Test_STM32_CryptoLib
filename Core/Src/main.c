@@ -462,6 +462,8 @@ void TestCryptolib(void)
 	printf(test_msg);
 	printf("\n");
 
+	printf("Starting encryption...\n");
+
 	if (Cryptolib_Encrypt(&crypto, test_msg, test_msg_size, enc_msg) == CRYPTOLIB_NO_ERROR) {
 		printf("Encryption successful.\n");
 	} else {
@@ -479,7 +481,10 @@ void TestCryptolib(void)
 		printf(", ");
 	}
 
+	printf("Starting decryption...\n");
+
 	uint8_t decryption = Cryptolib_Decrypt(&crypto, enc_msg, dec_msg);
+	
 	if (decryption == CRYPTOLIB_NO_ERROR) {
 		printf("Decryption successful.\n");
 	} else {
@@ -615,7 +620,7 @@ void TestHmac(void)
 	rx_buf_size = 0;
 	rx_buf_enc_size = 0;
 
-	uint8_t msg_to_hmac[] = "";
+	uint8_t msg_to_hmac[] = "CCTVal";
 	memcpy(tx_buf, msg_to_hmac, sizeof(msg_to_hmac));
 
 	printf("msg_to_hmac: ");
@@ -674,7 +679,7 @@ void TestHmac(void)
 	rx_buf_enc_size = tx_buf_enc_size;
 
 	printf("rx_buf_enc: ");
-	printf(rx_buf_enc);
+	printf(rx_buf_enc);	// This won't display the tag as the '\0' char is placed before the tag.
 	printf("\n");
 
 	printf("rx_buf_enc_size: ");
