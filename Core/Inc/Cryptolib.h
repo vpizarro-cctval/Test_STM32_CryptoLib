@@ -27,8 +27,10 @@ extern "C" {
 #define CRYPTOLIB_MAX_MSG_SIZE 	69	// Bytes (max expected plaintext size)
 #define CRYPTOLIB_ENC_MSG_SIZE	CRYPTOLIB_IV_SIZE + CRYPTOLIB_TAG_SIZE + CRYPTOLIB_MAX_MSG_SIZE
 									// Encoded msg: |IV|HMAC Tag|Ciphertext|
-#define CRYPTOLIB_AES_ALGO		CMOX_AESFAST_CBC_ENC_ALGO
+#define CRYPTOLIB_AES_ENC_ALGO	CMOX_AESFAST_CBC_ENC_ALGO
+#define CRYPTOLIB_AES_DEC_ALGO	CMOX_AESFAST_CBC_DEC_ALGO
 #define CRYPTOLIB_MAC_ALGO		CMOX_HMAC_SHA256_ALGO
+#define CRYPTOLIB_DEBUG_MODE	0
 
 /* Exported types ------------------------------------------------------------*/
 typedef enum {
@@ -111,7 +113,7 @@ uint8_t Cryptolib_Encrypt(Cryptolib_t *crypto_h,
 	memset(enc_msg, 0, CRYPTOLIB_ENC_MSG_SIZE);
 
 	cmox_cipher_retval_t retval_c;
-	retval_c = cmox_cipher_encrypt(CRYPTOLIB_AES_ALGO,  				/* Use AES CBC algorithm */
+	retval_c = cmox_cipher_encrypt(CRYPTOLIB_AES_ENC_ALGO,  			/* Encryption algorithm */
 								crypto_h->_msg, CRYPTOLIB_MAX_MSG_SIZE, /* Plaintext to encrypt */
 								crypto_h->_aes_key, CRYPTOLIB_KEY_SIZE,	/* AES key to use */
 								crypto_h->_aes_iv, CRYPTOLIB_KEY_SIZE,  /* Initialization vector */
@@ -148,6 +150,7 @@ uint8_t Cryptolib_Encrypt(Cryptolib_t *crypto_h,
 	memcpy(enc_msg, crypto_h->_aes_iv, CRYPTOLIB_IV_SIZE);
 	memcpy(enc_msg + CRYPTOLIB_IV_SIZE, hmac_tag, CRYPTOLIB_TAG_SIZE);
 
+#if CRYPTOLIB_DEBUG_MODE
 	printf("Cryptolib_Encrypt() debug:\n");
 	printf("HMAC tag generated:\n");
 	for (int i = 0; i < CRYPTOLIB_TAG_SIZE; i++) {
@@ -158,6 +161,7 @@ uint8_t Cryptolib_Encrypt(Cryptolib_t *crypto_h,
 		}
 		printf(", ");
 	}
+#endif
 
 	return CRYPTOLIB_NO_ERROR;
 }
@@ -176,6 +180,7 @@ uint8_t Cryptolib_Decrypt(Cryptolib_t *crypto_h, uint8_t *enc_msg, uint8_t *msg)
 		return CRYPTOLIB_KEY_ERROR;
 	}
 
+#if CRYPTOLIB_DEBUG_MODE
 	printf("Cryptolib_Decrypt() debug:\n");
 	printf("Encrypted msg:\n");
 	for (int i = 0; i < CRYPTOLIB_ENC_MSG_SIZE; i++) {
@@ -186,12 +191,14 @@ uint8_t Cryptolib_Decrypt(Cryptolib_t *crypto_h, uint8_t *enc_msg, uint8_t *msg)
 		}
 		printf(", ");
 	}
+#endif
 
 	uint8_t hmac_tag[CRYPTOLIB_TAG_SIZE] = {0};
 	uint8_t ciphertext[CRYPTOLIB_MAX_MSG_SIZE] = {0};
 	memcpy(hmac_tag, enc_msg + CRYPTOLIB_IV_SIZE, CRYPTOLIB_TAG_SIZE);
 	memcpy(ciphertext, enc_msg + CRYPTOLIB_IV_SIZE + CRYPTOLIB_TAG_SIZE, CRYPTOLIB_MAX_MSG_SIZE);
 
+#if CRYPTOLIB_DEBUG_MODE
 	printf("HMAC tag extracted:\n");
 	for (int i = 0; i < CRYPTOLIB_TAG_SIZE; i++) {
 		printf("%02X", hmac_tag[i]);
@@ -211,63 +218,9 @@ uint8_t Cryptolib_Decrypt(Cryptolib_t *crypto_h, uint8_t *enc_msg, uint8_t *msg)
 		}
 		printf(", ");
 	}
+#endif
 
 	cmox_mac_retval_t retval_m;
-
-	// TEST: Recalculate tag to ensure tag match.
-	size_t hmac_tag_size = 0;
-	uint8_t hmac_tag_recalc[CRYPTOLIB_TAG_SIZE] = {0};
-	retval_m = cmox_mac_compute(CRYPTOLIB_MAC_ALGO, 					/* Use HMAC SHA256 algorithm */
-							ciphertext, CRYPTOLIB_MAX_MSG_SIZE,     	/* Message to authenticate */
-							crypto_h->_hmac_key, CRYPTOLIB_KEY_SIZE, 	/* HMAC Key to use */
-							NULL, 0,                    				/* Custom data */
-							hmac_tag_recalc,                   			/* Data buffer to receive generated authnetication tag */
-							CRYPTOLIB_TAG_SIZE,    						/* Expected authentication tag size */
-							&hmac_tag_size);            				/* Generated tag size */
-	
-	if (retval_m != CMOX_MAC_SUCCESS) {
-		printf("CRYPTOLIB_AUTH_ERROR\n");
-	}
-	if (hmac_tag_size != CRYPTOLIB_TAG_SIZE) {
-		printf("CRYPTOLIB_AUTH_ERROR\n");
-	}
-
-	printf("Recalculated tag:\n");
-	for (int i = 0; i < CRYPTOLIB_TAG_SIZE; i++) {
-		printf("%02X", hmac_tag_recalc[i]);
-		if (i == CRYPTOLIB_TAG_SIZE - 1) {
-			printf("\n");
-			break;
-		}
-		printf(", ");
-	}
-
-	retval_m = cmox_mac_compute(CRYPTOLIB_MAC_ALGO, 					/* Use HMAC SHA256 algorithm */
-							ciphertext, CRYPTOLIB_MAX_MSG_SIZE,     	/* Message to authenticate */
-							crypto_h->_hmac_key, CRYPTOLIB_KEY_SIZE, 	/* HMAC Key to use */
-							NULL, 0,                    				/* Custom data */
-							hmac_tag_recalc,                   			/* Data buffer to receive generated authnetication tag */
-							CRYPTOLIB_TAG_SIZE,    						/* Expected authentication tag size */
-							&hmac_tag_size);            				/* Generated tag size */
-	
-	if (retval_m != CMOX_MAC_SUCCESS) {
-		printf("CRYPTOLIB_AUTH_ERROR\n");
-	}
-	if (hmac_tag_size != CRYPTOLIB_TAG_SIZE) {
-		printf("CRYPTOLIB_AUTH_ERROR\n");
-	}
-
-	printf("RERecalculated tag:\n");
-	for (int i = 0; i < CRYPTOLIB_TAG_SIZE; i++) {
-		printf("%02X", hmac_tag_recalc[i]);
-		if (i == CRYPTOLIB_TAG_SIZE - 1) {
-			printf("\n");
-			break;
-		}
-		printf(", ");
-	}
-
-	// END TEST.
 	
 	retval_m = cmox_mac_verify(CRYPTOLIB_MAC_ALGO,
 							ciphertext, CRYPTOLIB_MAX_MSG_SIZE,		/* Message to verify */
@@ -287,11 +240,11 @@ uint8_t Cryptolib_Decrypt(Cryptolib_t *crypto_h, uint8_t *enc_msg, uint8_t *msg)
 	size_t msg_size = 0;
 
 	cmox_cipher_retval_t retval_c;
-	retval_c = cmox_cipher_decrypt(CRYPTOLIB_AES_ALGO,					/* Use AES CBC algorithm */
+	retval_c = cmox_cipher_decrypt(CRYPTOLIB_AES_DEC_ALGO,				/* Decryption algorithm */
 								ciphertext, CRYPTOLIB_MAX_MSG_SIZE, 	/* Ciphertext to decrypt */
 								crypto_h->_aes_key, CRYPTOLIB_KEY_SIZE,	/* AES key to use */
 								iv, CRYPTOLIB_IV_SIZE,         			/* Initialization vector */
-								msg, &msg_size);   				/* Data buffer to receive generated plaintext */
+								msg, &msg_size);   						/* Data buffer to receive generated plaintext */
 		
 	if (retval_c != CMOX_CIPHER_SUCCESS) {
 		return CRYPTOLIB_DECRYPTION_ERROR;
